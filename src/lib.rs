@@ -894,6 +894,7 @@ impl Build {
     ///
     /// This will return a result instead of panicing; see compile() for the complete description.
     pub fn try_compile(&self, output: &str) -> Result<(), Error> {
+        self.fix_env_variabes()?;
         let (lib_name, gnu_lib_name) = if output.starts_with("lib") && output.ends_with(".a") {
             (&output[3..output.len() - 2], output.to_owned())
         } else {
@@ -2465,6 +2466,28 @@ impl Build {
     fn print(&self, s: &str) {
         if self.cargo_metadata {
             println!("{}", s);
+        }
+    }
+
+    fn fix_env_variabes(&self) -> Result<(), Error> {
+        let target = self.get_target()?;
+        let host = self.get_host()?;
+        if host.contains("apple-darwin") && target.contains("apple-darwin") {
+            // Replace the `SDKROOT` environment variable if it's clearly set for the wrong platform, which
+            // may occur when we're linking a custom build script while targeting iOS for example.
+            // Removing is not enough, because of cc from XCode can not find include files in such case
+            if let Ok(sdkroot) = env::var("SDKROOT") {
+                if sdkroot.contains("iPhone") {
+                    env::set_var("SDKROOT", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk");
+                }
+            }
+            // Additionally, `IPHONEOS_DEPLOYMENT_TARGET` must not be set when using the Xcode linker at
+            // "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld",
+            // although this is apparently ignored when using the linker at "/usr/bin/ld".
+            env::remove_var("IPHONEOS_DEPLOYMENT_TARGET");
+            Ok(())
+        } else {
+            Ok(())
         }
     }
 }
